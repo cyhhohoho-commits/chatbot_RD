@@ -1,0 +1,16 @@
+.env
+.streamlit/secrets.toml
+.venv/
+__pycache__/
+*.pyc
+cross_v5.json
+*.xlsx
+*.docx
+*.pdf
+git1.png
+ISAS불가능_*.png
+스크린샷*.png
+가상환경.txt
+백업/
+사용전 파일/
+사용파일/
