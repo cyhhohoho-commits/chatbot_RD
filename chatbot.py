@@ -7,7 +7,6 @@ from pptx import Presentation
 from docx import Document
 import io
 import os
-import time
 
 load_dotenv()
 client = Anthropic()
@@ -37,7 +36,7 @@ def check_password():
         else:
             st.session_state["authenticated"] = False
 
-    st.markdown("### 🔒 RD부 업무 안내 챗봇")
+    st.markdown("### RD부 업무 안내 챗봇")
     st.text_input("비밀번호를 입력하세요", type="password",
                   key="pw_input", on_change=_verify)
     if st.session_state.get("authenticated") is False:
@@ -124,7 +123,7 @@ def extract_pdf_text(file_bytes):
 def stream_ai_response(api_messages):
     with client.messages.stream(
         model="claude-sonnet-4-6",
-        max_tokens=8192,
+        max_tokens=16384,   # 긴 설문지 검수 결과가 잘리지 않도록 (사용한 만큼만 과금)
         system=[{
             "type": "text",
             "text": SYSTEM_PROMPT,
@@ -145,160 +144,314 @@ def stream_ai_response(api_messages):
 
 st.set_page_config(
     page_title="RD부 업무 안내 챗봇",
-    page_icon="🤖",
-    layout="wide"
+    page_icon="로고.png",
+    layout="centered"
 )
+
+# 라이트/다크 팔레트 (CSS 변수로 주입)
+LIGHT_THEME = {
+    "bg": "#FAF9F5",
+    "panel": "#F5F4EE",
+    "border": "#E8E6DC",
+    "border2": "#E0DDD0",
+    "text": "#1F1E1D",
+    "muted": "#8A8678",
+    "muted2": "#9B9786",
+    "bubble": "#F0EEE6",
+    "input-bg": "#FFFFFF",
+    "chip-bg": "#FFFFFF",
+    "chip-hover": "#F0EEE6",
+    "chip-border-hover": "#C8C5B5",
+    "warn-bg": "#F7F0EA",
+    "warn-border": "#E8DBCC",
+    "warn-text": "#6B5D4F",
+    "warn-title": "#A0633A",
+    "shadow": "rgba(31,30,29,0.05)",
+}
+DARK_THEME = {
+    "bg": "#262624",
+    "panel": "#1F1E1D",
+    "border": "#3A3A37",
+    "border2": "#44443F",
+    "text": "#ECECEA",
+    "muted": "#A6A296",
+    "muted2": "#8F8B80",
+    "bubble": "#3A3A37",
+    "input-bg": "#30302E",
+    "chip-bg": "#30302E",
+    "chip-hover": "#3A3A37",
+    "chip-border-hover": "#55554F",
+    "warn-bg": "#332B24",
+    "warn-border": "#4A3D30",
+    "warn-text": "#C9B49C",
+    "warn-title": "#D08D5E",
+    "shadow": "rgba(0,0,0,0.25)",
+}
+
+_palette = DARK_THEME if st.session_state.get("dark_mode") else LIGHT_THEME
+_css_vars = "".join(f"--{k}: {v};" for k, v in _palette.items())
+st.markdown(f"<style>:root {{{_css_vars}}}</style>", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
-* { font-family: 'Noto Sans KR', sans-serif; }
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600&display=swap');
 
-.stApp { background-color: #f0f4f8; }
-#MainMenu, footer { visibility: hidden; }
+html, body, [class*="st-"], .stApp {
+    font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+}
 
-/* 사이드바 */
+/* Material 아이콘 폰트는 덮어쓰지 않기 (사이드바 접기 버튼 등) */
+[data-testid="stIconMaterial"],
+span.material-symbols-rounded,
+[data-testid="stSidebarCollapseButton"] span,
+[data-testid="stExpandSidebarButton"] span {
+    font-family: 'Material Symbols Rounded' !important;
+}
+
+.stApp { background-color: var(--bg); }
+#MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; }
+[data-testid="stHeader"] { background: transparent; }
+
+/* 사이드바 다시 열기(>>) 버튼은 stToolbar 안에 있어 위 규칙에 같이 숨겨짐 → 복구 */
+[data-testid="stExpandSidebarButton"] {
+    visibility: visible !important;
+    color: var(--muted) !important;
+}
+
+/* 본문 텍스트 (다크모드 대응) */
+[data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] h1,
+[data-testid="stMarkdownContainer"] h2,
+[data-testid="stMarkdownContainer"] h3,
+[data-testid="stMarkdownContainer"] h4,
+[data-testid="stMarkdownContainer"] strong,
+[data-testid="stMarkdownContainer"] td,
+[data-testid="stMarkdownContainer"] th {
+    color: var(--text);
+}
+
+/* ── 다크모드 토글 버튼 (우상단 고정) ── */
+.st-key-theme_toggle {
+    position: fixed;
+    top: 10px;
+    right: 24px;
+    z-index: 1000000;  /* Streamlit 헤더(999990)보다 위 */
+    width: auto !important;
+}
+.st-key-theme_toggle button {
+    background: transparent !important;
+    border: 1px solid var(--border2) !important;
+    color: var(--muted) !important;
+    border-radius: 999px !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+    min-height: 32px !important;
+    padding: 2px 14px !important;
+    box-shadow: none !important;
+}
+.st-key-theme_toggle button:hover {
+    background: var(--chip-hover) !important;
+    color: var(--text) !important;
+}
+
+/* ── 사이드바 ── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #002470 0%, #0057b8 100%) !important;
+    background: var(--panel) !important;
+    border-right: 1px solid var(--border);
 }
-[data-testid="stSidebar"] * { color: white !important; }
+[data-testid="stSidebar"] * { color: var(--text); }
+
+.side-section { margin-bottom: 4px; }
+.side-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin: 22px 0 10px;
+}
+.side-item {
+    font-size: 13.5px;
+    color: var(--text);
+    line-height: 1.5;
+    padding: 2px 0;
+}
+.side-sub {
+    font-size: 12px;
+    color: var(--muted2);
+    padding-left: 12px;
+    line-height: 1.5;
+}
+.side-divider { border-top: 1px solid var(--border); margin: 18px 0 4px; }
+.side-warning {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--warn-text);
+    margin-top: 10px;
+}
+.side-warning, .side-warning span { color: var(--warn-text) !important; }
+.side-warning .warn-title {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--warn-title) !important;
+    margin-bottom: 4px;
+}
 [data-testid="stSidebar"] .stButton button {
-    background: rgba(255,255,255,0.15) !important;
-    border: 1px solid rgba(255,255,255,0.3) !important;
-    color: white !important;
+    background: transparent !important;
+    border: 1px solid var(--border2) !important;
+    color: var(--text) !important;
     border-radius: 10px !important;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stButton button:hover {
+    background: var(--chip-hover) !important;
+    border-color: var(--chip-border-hover) !important;
 }
 
-/* 사용자 말풍선 - 오른쪽 */
+/* ── 사용자 메시지: 오른쪽 연한 박스 ── */
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
     display: flex !important;
     flex-direction: row !important;
     justify-content: flex-end !important;
     background: transparent !important;
     box-shadow: none !important;
-    padding: 4px 0 !important;
+    padding: 8px 0 !important;
     gap: 0 !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) 
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
 [data-testid="stChatMessageContent"] {
-    background: #0057b8 !important;
-    color: white !important;
-    border-radius: 18px 4px 18px 18px !important;
-    box-shadow: 0 2px 8px rgba(0,87,184,0.25) !important;
-    max-width: 55% !important;
+    background: var(--bubble) !important;
+    color: var(--text) !important;
+    border-radius: 16px !important;
+    box-shadow: none !important;
+    max-width: 75% !important;
     width: fit-content !important;
-    padding: 16px 20px !important;
+    padding: 12px 18px !important;
     margin: 0 !important;
-    line-height: 1.6 !important;
+    line-height: 1.65 !important;
     display: inline-block !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) 
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
 [data-testid="stChatMessageContent"] p {
-    color: white !important;
+    color: var(--text) !important;
     margin: 0 !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) 
+/* Streamlit이 stMarkdownContainer에 margin-bottom:-1rem을 줘서 (마지막 p의 +1rem과 상쇄용)
+   p margin을 0으로 만들면 -1rem만 남아 말풍선 높이가 16px 모자라 텍스트가 아래로 쏠림 → 상쇄 제거 */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
+[data-testid="stChatMessageContent"] [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
 [data-testid="stChatMessageAvatarUser"] {
     display: none !important;
 }
 
-/* 챗봇 말풍선 - 왼쪽 */
+/* ── 챗봇 메시지: 말풍선 없이 본문 텍스트 ── */
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
     background: transparent !important;
     box-shadow: none !important;
-    padding: 4px 0 !important;
+    padding: 8px 0 !important;
     align-items: flex-start !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) 
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"])
 [data-testid="stChatMessageContent"] {
-    background: white !important;
-    color: #222 !important;
-    border-radius: 4px 18px 18px 18px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
-    max-width: 65% !important;
-    padding: 12px 16px !important;
-    margin-left: 8px !important;
+    background: transparent !important;
+    color: var(--text) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1.75 !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) 
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"])
 [data-testid="stChatMessageAvatarAssistant"] {
-    background: linear-gradient(135deg, #003087, #0057b8) !important;
-    border-radius: 50% !important;
+    display: none !important;
 }
 
-/* 입력창 */
+/* ── 입력창 ── */
+[data-testid="stChatInput"] {
+    background: var(--input-bg) !important;
+    border: 1px solid var(--border2) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 2px 10px var(--shadow) !important;
+}
+[data-testid="stChatInput"] > div,
+[data-testid="stChatInput"] div[data-baseweb="textarea"],
+[data-testid="stChatInput"] div[data-baseweb="base-input"] {
+    background: var(--input-bg) !important;
+    border-color: transparent !important;
+}
 [data-testid="stChatInput"] textarea {
-    border-radius: 12px !important;
-    border: 1.5px solid #c0d4ec !important;
-    background: white !important;
-    font-size: 14px !important;
+    background: transparent !important;
+    font-size: 14.5px !important;
+    color: var(--text) !important;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+    color: var(--muted) !important;
+}
+[data-testid="stChatInput"] button {
+    color: var(--muted) !important;
+}
+[data-testid="stBottom"],
+[data-testid="stBottom"] > div {
+    background: var(--bg) !important;
 }
 
-/* 파일 업로더 */
-[data-testid="stFileUploader"] {
-    background: white;
-    border: 1.5px dashed #b0c8f0;
-    border-radius: 12px;
-    padding: 8px 14px;
-}
-
-/* 샘플 질문 버튼 */
+/* ── 추천 질문 칩 ── */
 .stButton button {
-    border-radius: 10px !important;
-    border: 1.5px solid #c0d4ec !important;
-    background: white !important;
-    color: #003087 !important;
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    transition: all 0.15s !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border2) !important;
+    background: var(--chip-bg) !important;
+    color: var(--text) !important;
+    font-size: 13.5px !important;
+    font-weight: 400 !important;
+    box-shadow: none !important;
+    transition: background 0.15s, border-color 0.15s !important;
 }
 .stButton button:hover {
-    background: #0057b8 !important;
-    color: white !important;
-    border-color: #0057b8 !important;
+    background: var(--chip-hover) !important;
+    border-color: var(--chip-border-hover) !important;
+    color: var(--text) !important;
 }
 
-/* 파일 배지 */
-.file-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: #e8f0ff;
-    border: 1px solid #b0c8f0;
-    border-radius: 8px;
-    padding: 5px 12px;
-    font-size: 12px;
-    color: #003087;
-    margin-bottom: 8px;
+/* ── 첫 화면 인사 ── */
+.welcome {
+    text-align: center;
+    padding: 90px 0 36px;
+}
+.welcome-title {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 29px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.3px;
+}
+.welcome-sub {
+    font-size: 14.5px;
+    color: var(--muted);
+    margin-top: 12px;
+    line-height: 1.6;
 }
 
-/* 사이드바 박스 */
-.info-box {
-    background: rgba(255,255,255,0.12);
-    border-radius: 12px;
-    padding: 14px;
-    font-size: 13px;
-    line-height: 1.8;
-    margin-bottom: 12px;
+/* ── 파일 분석 중 표시 ── */
+@keyframes gentle-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
 }
-.info-box .box-title {
-    font-weight: 700;
-    color: #90caf9 !important;
-    margin-bottom: 6px;
-    font-size: 13px;
-}
-.warning-box {
-    background: rgba(220,50,50,0.2);
-    border: 1px solid rgba(255,120,120,0.35);
-    border-radius: 12px;
-    padding: 14px;
-    font-size: 12px;
-    line-height: 1.8;
-    margin-bottom: 12px;
-}
-.warning-box .box-title {
-    font-weight: 700;
-    color: #ffaaaa !important;
-    margin-bottom: 6px;
+.analyzing {
+    color: var(--muted);
+    font-size: 13.5px;
+    animation: gentle-pulse 1.6s ease-in-out infinite;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -312,6 +465,14 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pending_question" not in st.session_state:
     st.session_state.pending_question = None
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = False
+
+# 다크모드 토글 (우상단 고정 — CSS .st-key-theme_toggle)
+_toggle_label = "라이트 모드" if st.session_state.dark_mode else "다크 모드"
+if st.button(_toggle_label, key="theme_toggle"):
+    st.session_state.dark_mode = not st.session_state.dark_mode
+    st.rerun()
 
 SAMPLE_QUESTIONS = [
     "이 설문지는 어느 부서로 의뢰 해야 하나요?",
@@ -325,97 +486,82 @@ with st.sidebar:
     logo_b64 = get_image_base64("로고.png")
     if logo_b64:
         st.markdown(f"""
-            <div style="background:white;border-radius:12px;padding:14px;
-                        text-align:center;margin-bottom:16px;">
+            <div style="background:white;border:1px solid var(--border);
+                        border-radius:12px;padding:14px;
+                        text-align:center;margin-bottom:8px;">
                 <img src="data:image/png;base64,{logo_b64}"
-                     style="width:100%;max-width:180px;">
+                     style="width:100%;max-width:160px;">
             </div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
-    <div class="info-box">
-        <div class="box-title">📌 문의 가능 내용</div>
-        ✔ 조사 의뢰처 안내<br>
-        &nbsp;&nbsp;&nbsp;<span style="font-size:11px;opacity:0.8;">RD부 · 온라인실사팀 결정</span><br>
-        ✔ 설문지 검토<br>
-        &nbsp;&nbsp;&nbsp;<span style="font-size:11px;opacity:0.8;">로직·오류 등 이상 여부 확인</span><br>
-        ✔ 예상 적립금 안내<br>
-        &nbsp;&nbsp;&nbsp;<span style="font-size:11px;opacity:0.8;">응답시간 기반 계산</span><br>
-        ✔ 업무 일정 안내<br>
-        &nbsp;&nbsp;&nbsp;<span style="font-size:11px;opacity:0.8;">웹업·실사·테이블 일정</span>
+    <div class="side-title">문의 가능 내용</div>
+    <div class="side-item">조사 의뢰처 안내</div>
+    <div class="side-sub">RD부 · 온라인실사팀 결정</div>
+    <div class="side-item">설문지 검토</div>
+    <div class="side-sub">로직 · 오류 등 이상 여부 확인</div>
+    <div class="side-item">예상 적립금 안내</div>
+    <div class="side-sub">응답시간 기반 계산</div>
+    <div class="side-item">업무 일정 안내</div>
+    <div class="side-sub">웹업 · 실사 · 테이블 일정</div>
+
+    <div class="side-title" style="margin-top:26px;">첨부 가능 파일</div>
+    <div class="side-item">이미지(png · jpg) / PDF / PPT / 워드</div>
+    <div class="side-sub">HWP는 PDF로 변환 후 첨부</div>
+    <div class="side-sub">파일은 채팅창에 끌어다 놓으면 첨부됩니다</div>
+
+    <div class="side-warning">
+        <div class="warn-title">보안 주의사항</div>
+        고객사명 · 기밀 프로젝트, 응답자 개인정보,
+        사내 기밀 문서는 입력하지 마세요.<br>
+        <span style="font-size:11.5px;opacity:0.8;">
+        입력 내용은 외부 AI 서버를 경유합니다.</span>
     </div>
-    <div class="info-box">
-        <div class="box-title">📎 첨부 가능 파일</div>
-        🖼 이미지 (png, jpg)<br>
-        📄 PDF<br>
-        📊 PPT (pptx)<br>
-        📝 워드 (docx)<br>
-        <span style="font-size:11px;opacity:0.7;">* HWP는 PDF 변환 후 첨부</span>
-    </div>
-    <div class="warning-box">
-        <div class="box-title">🔒 보안 주의사항</div>
-        아래 내용은 입력/첨부 금지<br>
-        ❌ 고객사명/기밀 프로젝트<br>
-        ❌ 응답자 개인정보<br>
-        ❌ 사내 기밀 문서<br>
-        <span style="font-size:11px;opacity:0.75;">
-        입력 내용은 외부 AI 서버를 경유합니다</span>
-    </div>
+    <div class="side-divider"></div>
     """, unsafe_allow_html=True)
 
-    if st.button("🔄 대화 초기화", use_container_width=True):
+    if st.button("새 대화 시작", use_container_width=True):
         st.session_state.messages = []
         st.session_state.pending_question = None
         st.rerun()
 
-# 메인 헤더
-st.markdown("""
-<div style="background:linear-gradient(135deg,#002470,#0057b8);
-            padding:18px 28px;border-radius:14px;margin-bottom:20px;">
-    <div style="display:flex;align-items:center;gap:12px;">
-        <div style="width:42px;height:42px;background:rgba(255,255,255,0.2);
-                    border-radius:12px;display:flex;align-items:center;
-                    justify-content:center;font-size:22px;">🤖</div>
-        <div>
-            <div style="color:white;font-size:18px;font-weight:700;">
-                RD부 업무 안내 챗봇</div>
-            <div style="color:rgba(255,255,255,0.8);font-size:13px;">
-                설문조사 의뢰 및 RD부 업무 관련 문의를 도와드립니다</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# 샘플 질문
+# 첫 화면 인사 + 추천 질문
 if not st.session_state.messages:
-    st.markdown("#### 💬 자주 묻는 질문")
+    st.markdown("""
+    <div class="welcome">
+        <div class="welcome-title">안녕하세요, RD부 업무 안내 챗봇입니다</div>
+        <div class="welcome-sub">설문조사 의뢰처, ISAS 작업 가능 여부, 예상 적립금 등을 문의해 보세요.<br>
+        설문지 파일은 아래 채팅창에 끌어다 놓으면 첨부됩니다.</div>
+    </div>
+    """, unsafe_allow_html=True)
     cols = st.columns(2)
     for i, q in enumerate(SAMPLE_QUESTIONS):
         with cols[i % 2]:
             if st.button(q, key=f"sq_{i}", use_container_width=True):
                 st.session_state.pending_question = q
                 st.rerun()
-    st.markdown("---")
 
 # 이전 대화 표시
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 파일 업로더
-uploaded_file = st.file_uploader(
-    "📎 파일을 드래그하거나 클릭해서 첨부 (이미지 / PDF / PPT / 워드)",
-    type=["png", "jpg", "jpeg", "pdf", "pptx", "docx"],
+# 채팅 입력 (파일 첨부 일체형 — 드래그 앤 드롭 지원)
+chat_value = st.chat_input(
+    "문의 내용을 입력하거나 파일을 끌어다 놓으세요",
+    accept_file=True,
+    file_type=["png", "jpg", "jpeg", "pdf", "pptx", "docx"],
 )
-if uploaded_file:
-    st.markdown(
-        f'<div class="file-badge">📎 {uploaded_file.name} '
-        f'({round(uploaded_file.size/1024,1)}KB)</div>',
-        unsafe_allow_html=True
-    )
 
-# pending_question 처리
-user_input = st.chat_input("문의 내용을 입력하세요...")
+user_input = None
+uploaded_file = None
+if chat_value:
+    user_input = (chat_value.text or "").strip()
+    if chat_value.files:
+        uploaded_file = chat_value.files[0]
+        if not user_input:
+            user_input = "첨부한 파일을 검토해 주세요."
+
 if st.session_state.pending_question:
     user_input = st.session_state.pending_question
     st.session_state.pending_question = None
@@ -479,27 +625,23 @@ if user_input:
 
     with st.chat_message("assistant"):
         has_file = bool(file_text or is_image)
-        if has_file:
-            stages = [
-                "파일 읽는 중",
-                "설문 구조 분석",
-                "답변 작성",
-            ]
-            progress_placeholder = st.empty()
-            for i, stage in enumerate(stages):
-                pct = int((i + 1) / len(stages) * 100)
-                bar_html = (
-                    f'<div style="font-size:0.85em; color:#555; margin-bottom:4px;">'
-                    f'분석 중... ({i+1}/{len(stages)}단계) — {stage}</div>'
-                    f'<div style="background:#e0e0e0; border-radius:6px; height:10px; width:100%;">'
-                    f'<div style="background:linear-gradient(90deg,#6C63FF,#48C9B0); '
-                    f'width:{pct}%; height:10px; border-radius:6px; transition:width 0.3s;"></div>'
-                    f'</div>'
-                )
-                progress_placeholder.markdown(bar_html, unsafe_allow_html=True)
-                time.sleep(0.25)
-            progress_placeholder.empty()
-        answer = st.write_stream(stream_ai_response(api_messages))
+        status_placeholder = st.empty()
+        status_text = ("첨부 파일을 분석하고 있습니다" if has_file
+                       else "답변을 준비하고 있습니다")
+        status_placeholder.markdown(
+            f'<div class="analyzing">{status_text}</div>',
+            unsafe_allow_html=True
+        )
+
+        def _stream_clearing_status():
+            first = True
+            for chunk in stream_ai_response(api_messages):
+                if first:
+                    status_placeholder.empty()
+                    first = False
+                yield chunk
+
+        answer = st.write_stream(_stream_clearing_status())
 
     st.session_state.messages.append({
         "role": "assistant", "content": answer
