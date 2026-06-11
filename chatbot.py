@@ -568,6 +568,17 @@ if st.session_state.pending_question:
 
 # 메시지 처리
 if user_input:
+    # ① 사용자 말풍선을 즉시 화면에 표시 (파일 파싱·답변 생성 전 — 체감 지연 제거)
+    if uploaded_file:
+        _fname = uploaded_file.name.lower()
+        _tag = "이미지" if _fname.endswith((".png", ".jpg", ".jpeg")) else "파일"
+        display_content = f"[{_tag} 첨부: {uploaded_file.name}]\n{user_input}"
+    else:
+        display_content = user_input
+    with st.chat_message("user"):
+        st.markdown(display_content)
+
+    # ② 파일 파싱
     file_text = ""
     is_image = False
     image_data = None
@@ -600,17 +611,14 @@ if user_input:
                  "text": f"첨부 이미지를 참고해서 답변해줘.\n\n{user_input}"}
             ]
         }
-        display_content = f"[이미지 첨부: {uploaded_file.name}]\n{user_input}"
     elif file_text:
         api_message = {
             "role": "user",
             "content": f"첨부 파일 내용:\n{file_text}\n\n"
                        f"위 내용을 참고해서 답변해줘.\n\n{user_input}"
         }
-        display_content = f"[파일 첨부: {uploaded_file.name}]\n{user_input}"
     else:
         api_message = {"role": "user", "content": user_input}
-        display_content = user_input
 
     st.session_state.messages.append({
         "role": "user", "content": display_content
