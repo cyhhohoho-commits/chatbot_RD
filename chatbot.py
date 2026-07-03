@@ -7,6 +7,7 @@ from pptx import Presentation
 from docx import Document
 import io
 import os
+import re
 
 load_dotenv()
 client = Anthropic()
@@ -60,10 +61,58 @@ def extract_pptx_text(file_bytes):
                 text += shape.text + "\n"
     return text
 
+# ── 선택지시문 자동 점검용 패턴 ─────────────────────────────
+# 선택지시문: PROG/BASE 대괄호는 제외하고, 실제 지시문 키워드가 든 [...]만 인정
+_INSTR_RE   = re.compile(r'\[(?![^\]]*(?:PROG|BASE))[^\]]*(?:선택|직접\s*입력|수치형|순위|척도)[^\]]*\]')
+_LABEL_RE   = re.compile(r'^\s*(SQ|DQ|Q)\s*\d+[A-Z]?(?:-\d+)?')
+_CHOICE_RE  = re.compile(r'^\s*\d+\s*\)')
+_PROGBASE_RE = re.compile(r'^\s*\[(PROG|BASE)\b')
+
+
+def _is_question_start(t):
+    """문단이 새로운 '문항의 시작'인지 판정. 보기줄/PROG·BASE줄/지시문 연속줄은 제외."""
+    t = t.strip()
+    if not t or _PROGBASE_RE.match(t):
+        return False
+    if _LABEL_RE.match(t):          # SQ7, Q19, DQ1 등 명시 라벨
+        return True
+    if _CHOICE_RE.match(t):         # "1) ..." 보기줄
+        return False
+    if '?' in t:                    # 물음표가 있으면 질문 문장
+        return True
+    return False
+
+
+def _question_id(t):
+    t = t.strip()
+    m = _LABEL_RE.match(t)
+    if m:
+        return re.match(r'^\s*((SQ|DQ|Q)\s*\d+[A-Z]?(?:-\d+)?)', t).group(1).replace(' ', '')
+    return t[:24].strip()           # 라벨 없으면 앞부분으로 식별
+
+
+def _audit_choice_instructions(para_texts):
+    """문항을 블록 단위로 묶어, 블록 전체에 선택지시문이 하나도 없는 문항만 골라낸다.
+    (선택지시문이 질문 문장과 다른 줄에 분리돼 있어도 같은 블록이면 '있음'으로 인정)"""
+    blocks = []
+    cur = None
+    for txt in para_texts:
+        if _is_question_start(txt):
+            cur = {'id': _question_id(txt), 'has': bool(_INSTR_RE.search(txt))}
+            blocks.append(cur)
+        elif cur is not None:
+            if _INSTR_RE.search(txt):
+                cur['has'] = True
+        # cur가 없을 때(머리말 등)는 문항이 아니므로 버린다
+    missing = [b['id'] for b in blocks if not b['has']]
+    return len(blocks), missing
+
+
 def extract_docx_text(file_bytes):
     doc = Document(io.BytesIO(file_bytes))
     text = ""
     ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    para_texts = []  # 선택지시문 자동 점검용 (본문 문단 텍스트만 수집)
     num_counts = {}  # {(numId, ilvl): count} — 자동번호매기기 카운터
 
     for child in doc.element.body:
@@ -72,6 +121,8 @@ def extract_docx_text(file_bytes):
         if tag == f'{{{ns}}}p':
             para_text = ''.join(node.text or '' for node in child.iter()
                                 if node.tag == f'{{{ns}}}t')
+            if para_text.strip():
+                para_texts.append(para_text.replace('\xa0', ' '))
 
             # 자동번호매기기(numPr) 감지 후 번호 복원
             num_prefix = ''
@@ -109,6 +160,15 @@ def extract_docx_text(file_bytes):
                         cell_texts.append(t_text.strip())
                     label = "[헤더]" if i == 0 else f"[속성{i}]"
                     text += f"  {label} {' | '.join(cell_texts)}\n"
+
+    # ── 선택지시문 자동 점검 결과 부착 (LLM이 눈으로 세지 말고 이 결과를 신뢰) ──
+    q_count, missing = _audit_choice_instructions(para_texts)
+    text += "\n\n[선택지시문 자동 점검 결과]\n"
+    text += f"- 점검한 문항 블록 수: {q_count}\n"
+    if missing:
+        text += "- 선택지시문이 없는 문항: " + ", ".join(missing) + "\n"
+    else:
+        text += "- 선택지시문이 없는 문항: 없음 (모든 문항에 선택지시문 있음)\n"
 
     return text
 
